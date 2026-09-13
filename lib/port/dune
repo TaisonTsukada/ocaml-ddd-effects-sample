@@ -1,0 +1,9 @@
+; Port: Usecase が外の世界に求める操作の「宣言」だけを置く層。
+; 実装は一切なく (それは Gateway の仕事)、あるのは extensible variant の action と、
+; それを送出する Inject effect だけ。
+
+(include_subdirs qualified)
+
+(library
+ (name user_api_port)
+ (libraries user_api_domain))

@@ -1,0 +1,13 @@
+; Usecase 層のテスト。
+; モックライブラリは不要で、Locator.Inject に答えるエフェクトハンドラを
+; テストごとに書くだけで Port の実装 (Gateway) を差し替えられる。
+
+(tests
+ (names test_register_user test_get_user test_health)
+ (package user_api)
+ (libraries
+  user_api_domain
+  user_api_port
+  user_api_usecase
+  user_api_test_support
+  alcotest))

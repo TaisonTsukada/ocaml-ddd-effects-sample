@@ -1,0 +1,6 @@
+; Domain 層のテスト: value object のバリデーションと封印。
+
+(test
+ (name test_user)
+ (package user_api)
+ (libraries user_api_domain user_api_test_support alcotest))

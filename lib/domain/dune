@@ -1,0 +1,8 @@
+; Domain: アプリケーションの不変条件そのもの。
+; 純粋な型と関数しかなく、I/O にも effect にも依存しない (どのライブラリにも依存しない)。
+; include_subdirs qualified により objects/user.ml は User_api_domain.Objects.User になる。
+
+(include_subdirs qualified)
+
+(library
+ (name user_api_domain))

@@ -1,0 +1,6 @@
+; テスト間で共有する fixture と Alcotest の testable。
+; unsafe_from (バリデーション省略) を使ってよいのはここだけ。
+
+(library
+ (name user_api_test_support)
+ (libraries user_api_domain user_api_port alcotest))

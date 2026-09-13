@@ -1,0 +1,14 @@
+; Gateway 層のテスト。
+; 腐敗防止層の変換 (row <-> domain, Driver のエラー -> ドメインのエラー) と、
+; 実 Driver を使った Port の解釈 (Usecase をハンドラで囲んで走らせる) を見る。
+
+(test
+ (name test_user_repository)
+ (package user_api)
+ (libraries
+  user_api_domain
+  user_api_driver
+  user_api_gateway
+  user_api_usecase
+  user_api_test_support
+  alcotest))

@@ -1,0 +1,8 @@
+; エントリーポイント。PORT を読んでサーバーを起動するだけで、
+; 配線そのものは user_api_app にある。
+
+(executable
+ (name main)
+ (public_name user_api)
+ (package user_api)
+ (libraries user_api_app user_api_driver eio eio_main logs logs.fmt))

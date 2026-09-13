@@ -1,0 +1,8 @@
+; Usecase: Domain と Port の語彙だけでアプリケーションの振る舞いを書く層。
+; cohttp も eio も知らない (依存に無いのでコンパイル時に強制される)。
+
+(include_subdirs qualified)
+
+(library
+ (name user_api_usecase)
+ (libraries user_api_domain user_api_port))

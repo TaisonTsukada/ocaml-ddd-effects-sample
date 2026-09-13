@@ -1,0 +1,17 @@
+; App: 結び目 (コンポジションルート)。
+; Usecase が perform する Port の effect を Gateway のハンドラで解釈し、
+; cohttp-eio のサーバーに配線する。全レイヤーを知っているのはここだけ。
+; bin/ ではなくライブラリにしてあるのは、E2E テストから同じ配線を再利用するため。
+
+(include_subdirs qualified)
+
+(library
+ (name user_api_app)
+ (libraries
+  user_api_driver
+  user_api_gateway
+  user_api_rest
+  cohttp-eio
+  http
+  eio
+  logs))

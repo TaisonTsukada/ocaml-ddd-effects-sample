@@ -1,0 +1,16 @@
+; E2E テスト: 実際に cohttp-eio のサーバーを (ポート 0 で) 立ち上げ、
+; cohttp-eio のクライアントから叩いて API として動くことを確認する。
+; 配線は bin/main.ml と同じ user_api_app を使う。
+
+(test
+ (name test_api)
+ (package user_api)
+ (libraries
+  user_api_app
+  user_api_driver
+  cohttp-eio
+  eio
+  eio_main
+  http
+  uri
+  alcotest))

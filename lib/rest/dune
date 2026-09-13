@@ -1,0 +1,20 @@
+; REST: HTTP (JSON DTO) と Usecase の間の変換層。
+; DTO -> Domain のパースはここで行うので、この先 (Usecase/Port/Domain) には
+; 常に valid なドメインの値しか流れない (Always Valid Domain Model)。
+; Usecase 内で perform される effect はこの層を素通りして Gateway のハンドラに届く。
+
+(include_subdirs qualified)
+
+(library
+ (name user_api_rest)
+ (libraries
+  user_api_domain
+  user_api_usecase
+  cohttp-eio
+  http
+  uri
+  eio
+  yojson
+  ppx_yojson_conv_lib)
+ (preprocess
+  (pps ppx_yojson_conv)))

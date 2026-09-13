@@ -1,0 +1,14 @@
+; REST 層のテスト。
+; 「不正な入力が Usecase に届かない」ことを保証しているのはこの層なので、
+; DTO <-> Domain の変換とエラー -> HTTP ステータスの対応をここで押さえる。
+
+(test
+ (name test_dto)
+ (package user_api)
+ (libraries
+  user_api_domain
+  user_api_rest
+  user_api_test_support
+  http
+  yojson
+  alcotest))

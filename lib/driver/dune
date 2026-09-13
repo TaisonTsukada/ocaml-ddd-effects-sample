@@ -1,0 +1,8 @@
+; Driver: 実際の外部リソース操作。
+; ★ user_api_domain に依存していないことが重要で、Driver は自分の DTO (row) と
+;   自分のエラー語彙しか持たない。Domain との翻訳は Gateway (腐敗防止層) が行う。
+
+(include_subdirs qualified)
+
+(library
+ (name user_api_driver))
