@@ -1,6 +1,6 @@
 ; App: 結び目 (コンポジションルート)。
 ; Usecase が perform する Port の effect を、どの Gateway の関数で解釈するかを決め
-; (handler.ml)、cohttp-eio のサーバーに配線する (server.ml)。全レイヤーを知っているのはここだけ。
+; (composition_root.ml)、cohttp-eio のサーバーに配線する (server.ml)。全レイヤーを知っているのはここだけ。
 ; bin/ ではなくライブラリにしてあるのは、E2E テストから同じ配線を再利用するため。
 
 (include_subdirs qualified)

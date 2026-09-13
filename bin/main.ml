@@ -15,5 +15,5 @@ let () =
       m "listening on port %d" (User_api_app.Server.port_of socket));
   (* 結び目: どの Port を誰が実装するかを決めたハンドラでリクエストを包む。 *)
   User_api_app.Server.serve
-    ~wrap:(fun th -> User_api_app.Handler.v ~store th)
+    ~wrap:(fun th -> User_api_app.Composition_root.handler ~store th)
     socket

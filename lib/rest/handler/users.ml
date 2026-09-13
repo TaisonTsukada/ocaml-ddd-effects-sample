@@ -6,8 +6,8 @@ let register body =
   let result =
     let* dto = Dto.User.register_request_of_body (Eio.Flow.read_all body) in
     let* name, email = Dto.User.to_domain dto in
-    (* ここで Port の effect が perform されるが、REST 層はそれを扱わない。
-       解釈するのは Gateway のハンドラ (app/handler.ml で被せる)。 *)
+    (* Usecase が Port の effect を perform する。REST 層はそれを扱わない。
+       解釈するのは composition root (lib/app/composition_root.ml がリクエスト全体に被せる)。 *)
     User_api_usecase.Register_user.run ~name ~email
   in
   match result with

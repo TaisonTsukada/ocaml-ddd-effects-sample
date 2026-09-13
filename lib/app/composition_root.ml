@@ -1,4 +1,4 @@
-(** Composition root: Port の語彙を Gateway の実装で解釈するエフェクトハンドラ。
+(** Composition root。Port の語彙を Gateway の実装で解釈するエフェクトハンドラを組み立てる。
 
     Usecase は [Locator.call (User_port.Create { name; email })] と書いただけで、
     ここで初めて「それはインメモリストアへの書き込みである」と決まる。 「どの action
@@ -31,6 +31,6 @@ let system_port th =
     continue k (System_gateway.ping ())
 
 (** 全部を積み上げたもの。これで囲んだ計算は「実行環境を渡された」状態になる。 *)
-let v ~store th =
+let handler ~store th =
   system_port @@ fun () ->
   user_port ~store @@ fun () -> th ()

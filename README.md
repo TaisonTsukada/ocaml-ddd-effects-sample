@@ -44,7 +44,7 @@
 
 スライドの **Gateway ──実装──→ Port** の矢印は、effect では
 「Port の `Inject` に答えるハンドラを書くこと」にあたります。本実装ではその**束縛の決定を
-composition root (`lib/app/handler.ml`) に集約**し、Gateway 自身は Port を知りません
+composition root (`lib/app/composition_root.ml`) に集約**し、Gateway 自身は Port を知りません
 (`lib/gateway/dune` に `user_api_port` が無い)。「実装を差し替える」とは
 composition root が参照する Gateway を差し替えることです。
 
@@ -74,10 +74,10 @@ lib/rest/         dto/user.ml          request/response DTO と to_domain / of_d
                   handler/users.ml     POST /users, GET /users/:id
                   handler/health.ml    GET /health
                   router.ml            メソッド + パスのディスパッチ
-lib/app/          handler.ml           Port の action を Gateway の関数へ束縛するエフェクトハンドラ
+lib/app/          composition_root.ml  Port の action を Gateway の関数へ束縛するエフェクトハンドラ
                   server.ml            listen / serve (cohttp-eio)。store も Port も知らない
 bin/main.ml       PORT を読んで起動するだけ
-test/             support/ domain/ usecase/ gateway/ app/ rest/ e2e/
+test/             support/ domain/ usecase/ e2e/
 ```
 
 ## 1 リクエストの流れ
@@ -105,7 +105,7 @@ test/             support/ domain/ usecase/ gateway/ app/ rest/ e2e/
      | None -> Locator.call @@ User_port.Create { name; email }
    ```
 
-4. **`lib/app/handler.ml`** (composition root) — `Inject` を捕まえて、
+4. **`lib/app/composition_root.ml`** — `Inject` を捕まえて、
    その action を Gateway のどの関数で答えるかを決める。束縛の決定はここに集約されている。
 
    ```ocaml
@@ -115,7 +115,8 @@ test/             support/ domain/ usecase/ gateway/ app/ rest/ e2e/
          continue k (User_gateway.create ~store ~name ~email)
      | ...
 
-   let v ~store th = system_port @@ fun () -> user_port ~store @@ fun () -> th ()
+   let handler ~store th =
+     system_port @@ fun () -> user_port ~store @@ fun () -> th ()
    ```
 
 5. **`lib/gateway/user_gateway.ml`** — Driver を呼び、返ってきた `row` を**検証つきで**
@@ -126,7 +127,7 @@ test/             support/ domain/ usecase/ gateway/ app/ rest/ e2e/
 
    ```ocaml
    (* bin/main.ml *)
-   Server.serve ~wrap:(fun th -> Handler.v ~store th) socket
+   Server.serve ~wrap:(fun th -> Composition_root.handler ~store th) socket
    ```
 
 ## ビルド、テスト、起動
@@ -137,7 +138,7 @@ OCaml 5.3 以上 (effect 構文 `effect P, k ->` を使うため) と dune 3.24 
 opam install dune eio eio_main cohttp-eio http uri yojson ppx_yojson_conv logs fmt alcotest
 
 make build   # dune build
-make test    # dune runtest (53 ケース)
+make test    # dune runtest (27 ケース)
 make fmt     # dune fmt
 make run     # PORT=8080 で起動。make run PORT=9090 で変更可
 make opam    # dune-project を編集したあと user_api.opam を生成し直す
@@ -183,23 +184,23 @@ curl -i localhost:8080/health
 
 ## テスト
 
-`make test` で 6 レイヤー分 (計 53 ケース) が走ります。
+`make test` で 27 ケースが走ります。**純粋な中心 (domain / usecase) と、外側の結線をまとめて
+踏む e2e** の 3 つだけに絞っています。Gateway・composition root・REST は「翻訳と結線」しかない
+薄い層で、単体テストを置くと振る舞いではなく構造をピン留めしてしまい、レイヤーを動かすたびに
+壊れるからです。
 
 | 対象 | 何を見ているか |
 | --- | --- |
 | `test/domain/` | value object のバリデーション境界、`Seal` の同型性、アクセサ |
 | `test/usecase/` | **`Inject` に答えるハンドラをモックとして書く** (記事 §5)。重複時に `Create` が呼ばれないことも検証 |
-| `test/gateway/` | 腐敗防止層の変換 (壊れた `row` を弾く、エラー語彙の翻訳) と、実 Driver との結合 |
-| `test/app/` | composition root の束縛 (どの action がどの Gateway 関数に繋がっているか) |
-| `test/rest/` | DTO ⇄ Domain、ボディ/パス変数のパース、ドメインエラー → HTTP ステータスの対応表 |
-| `test/e2e/` | 空きポートで実際にサーバーを起動し、cohttp-eio のクライアントから叩く |
+| `test/e2e/` | 空きポートで実際にサーバーを起動して叩く。ルーティング、JSON パース、**Port の束縛漏れ** (書き忘れると実行時 `Effect.Unhandled`)、ドメインエラー → HTTP ステータスをまとめて踏む |
 
 Usecase のテストはこう書けます。モックライブラリは要りません。
 
 ```ocaml
 let inject : type a. a Locator.action -> a = function
-  | Port.Find_by_email _ -> Ok None
-  | Port.Create { name; email } -> ...; Ok fixture
+  | User_port.Find_by_email _ -> Ok None
+  | User_port.Create { name; email } -> ...; Ok fixture
   | _ -> failwith "unexpected action"
 in
 Mock.handle { inject } (fun () -> Register_user.run ~name ~email)

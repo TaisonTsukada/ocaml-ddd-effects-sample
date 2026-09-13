@@ -2,7 +2,7 @@
 
     Driver の語彙 ([row] / [Store.error]) と Domain の語彙をひたすら翻訳するだけの層で、 effect
     のことは知らない (依存にも [user_api_port] を入れていない)。 どの Port の action
-    がここのどの関数に対応するかを決めるのは composition root ([User_api_app.Handler])。
+    がここのどの関数に対応するかを決めるのは composition root ([User_api_app.Composition_root])。
 
     - Driver の [row] → Domain: **必ず検証つきの [from] を通す**。外から来た値を信用しないのが ACL
       の役目なので、[unsafe_from] は使わない。壊れた行は [`InternalError] に翻訳して、 不正な値をドメインに入れない。
