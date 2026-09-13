@@ -1,0 +1,14 @@
+; Composition root のテスト。
+; 「Port の action が Gateway のどの関数に束縛されているか」を、
+; Usecase をハンドラで囲んで走らせることで確認する。
+
+(test
+ (name test_handler)
+ (package user_api)
+ (libraries
+  user_api_app
+  user_api_domain
+  user_api_driver
+  user_api_usecase
+  user_api_test_support
+  alcotest))

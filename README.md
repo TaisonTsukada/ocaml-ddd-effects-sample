@@ -38,13 +38,20 @@
 | Usecase | `lib/usecase/` | Domain と Port の語彙だけで振る舞いを記述。HTTP も DB も知らない |
 | Port | `lib/port/` | 「何が欲しいか」の宣言のみ。`Locator.action` (extensible variant) + `Inject` effect |
 | Domain | `lib/domain/` | 封印された value object とドメインエラー。どのライブラリにも依存しない |
-| Gateway | `lib/gateway/` | **腐敗防止層 兼 Port の実装**。Driver の DTO/エラー語彙と Domain を翻訳し、effect を解釈する |
+| Gateway | `lib/gateway/` | **腐敗防止層 (ACL)**。Driver の DTO/エラー語彙と Domain を翻訳する。effect は扱わない |
 | Driver | `lib/driver/` | 実際の外部リソース操作。**Domain を知らない** (依存にも入れていない) |
-| 結び目 | `lib/app/`, `bin/` | Gateway のハンドラを積んで cohttp-eio に配線する |
+| 結び目 | `lib/app/`, `bin/` | **composition root**。Port の action を Gateway のどの関数に束縛するかを決め、cohttp-eio に配線する |
+
+スライドの **Gateway ──実装──→ Port** の矢印は、effect では
+「Port の `Inject` に答えるハンドラを書くこと」にあたります。本実装ではその**束縛の決定を
+composition root (`lib/app/handler.ml`) に集約**し、Gateway 自身は Port を知りません
+(`lib/gateway/dune` に `user_api_port` が無い)。「実装を差し替える」とは
+composition root が参照する Gateway を差し替えることです。
 
 依存の向きは `dune-project` の `(implicit_transitive_deps false)` によってコンパイル時に強制されます。
 たとえば `lib/driver/dune` は `user_api_domain` を列挙していないので、Driver からドメインの型を
 参照しようとするとビルドが落ちます。これが腐敗防止層 (Gateway) を置く理由そのものです。
+同じ仕組みで、Gateway から Port の action を触ることもできません。
 
 ## ディレクトリ
 
@@ -60,17 +67,17 @@ lib/usecase/      register_user.ml     重複確認 → 登録
                   health.ml            Ping
 lib/driver/       memory/user_store.ml row (int/string) を持つインメモリストア + 自前のエラー型
                   system/probe.ml      死活確認
-lib/gateway/      user_repository.ml   row ⇄ domain の翻訳 + Inject を解釈するハンドラ
-                  system.ml            Ping のハンドラ
+lib/gateway/      user_repository.ml   row ⇄ domain / Driver のエラー ⇄ ドメインのエラー の翻訳
+                  system.ml            死活確認の翻訳
 lib/rest/         dto/user.ml          request/response DTO と to_domain / of_domain
                   dto/error.ml         ドメインエラー → (HTTP ステータス, メッセージ)
                   handler/users.ml     POST /users, GET /users/:id
                   handler/health.ml    GET /health
                   router.ml            メソッド + パスのディスパッチ
-lib/app/          handler.ml           Gateway のハンドラを積み上げる
-                  server.ml            listen / serve (cohttp-eio)
+lib/app/          handler.ml           Port の action を Gateway の関数へ束縛するエフェクトハンドラ
+                  server.ml            listen / serve (cohttp-eio)。store も Port も知らない
 bin/main.ml       PORT を読んで起動するだけ
-test/             support/ domain/ usecase/ gateway/ rest/ e2e/
+test/             support/ domain/ usecase/ gateway/ app/ rest/ e2e/
 ```
 
 ## 1 リクエストの流れ
@@ -98,20 +105,29 @@ test/             support/ domain/ usecase/ gateway/ rest/ e2e/
      | None -> Locator.call @@ User_repository.Create { name; email }
    ```
 
-4. **`lib/gateway/user_repository.ml`** — `Inject` を捕まえて Driver を呼び、
-   返ってきた `row` を**検証つきで**ドメインに戻す (壊れていれば `` `InternalError ``)。
+4. **`lib/app/handler.ml`** (composition root) — `Inject` を捕まえて、
+   その action を Gateway のどの関数で答えるかを決める。束縛の決定はここに集約されている。
 
    ```ocaml
-   let handler ~store th =
+   let users ~store th =
      try th () with
-     | effect Locator.Inject (Port.Create { name; email }), k ->
-         continue k (create ~store ~name ~email)
+     | effect Locator.Inject (User_repository.Create { name; email }), k ->
+         continue k (Gateway.User_repository.create ~store ~name ~email)
      | ...
+
+   let v ~store th = system @@ fun () -> users ~store @@ fun () -> th ()
    ```
 
-5. **`lib/app/handler.ml`** — ハンドラを積み上げる。Port が増えたらここに足すだけ。
+5. **`lib/gateway/user_repository.ml`** — Driver を呼び、返ってきた `row` を**検証つきで**
+   ドメインに戻す (壊れていれば `` `InternalError ``)。effect のことは知らない純粋な関数。
 6. **`lib/app/server.ml`** — cohttp-eio は接続ごとに fiber を fork し、**effect は fiber をまたげない**ので、
-   ハンドラはリクエストごとの callback の中で被せる (記事 §6 と同じ制約)。
+   ハンドラはリクエストごとの callback の中で被せる (記事 §6 と同じ制約)。サーバー自身は
+   `wrap` を受け取るだけで、`store` も Port も知らない。
+
+   ```ocaml
+   (* bin/main.ml *)
+   Server.serve ~wrap:(fun th -> Handler.v ~store th) socket
+   ```
 
 ## ビルド、テスト、起動
 
@@ -121,7 +137,7 @@ OCaml 5.3 以上 (effect 構文 `effect P, k ->` を使うため) と dune 3.24 
 opam install dune eio eio_main cohttp-eio http uri yojson ppx_yojson_conv logs fmt alcotest
 
 make build   # dune build
-make test    # dune runtest (50 ケース)
+make test    # dune runtest (53 ケース)
 make fmt     # dune fmt
 make run     # PORT=8080 で起動。make run PORT=9090 で変更可
 make opam    # dune-project を編集したあと user_api.opam を生成し直す
@@ -167,13 +183,14 @@ curl -i localhost:8080/health
 
 ## テスト
 
-`make test` で 5 レイヤー分 (計 50 ケース) が走ります。
+`make test` で 6 レイヤー分 (計 53 ケース) が走ります。
 
 | 対象 | 何を見ているか |
 | --- | --- |
 | `test/domain/` | value object のバリデーション境界、`Seal` の同型性、アクセサ |
 | `test/usecase/` | **`Inject` に答えるハンドラをモックとして書く** (記事 §5)。重複時に `Create` が呼ばれないことも検証 |
 | `test/gateway/` | 腐敗防止層の変換 (壊れた `row` を弾く、エラー語彙の翻訳) と、実 Driver との結合 |
+| `test/app/` | composition root の束縛 (どの action がどの Gateway 関数に繋がっているか) |
 | `test/rest/` | DTO ⇄ Domain、ボディ/パス変数のパース、ドメインエラー → HTTP ステータスの対応表 |
 | `test/e2e/` | 空きポートで実際にサーバーを起動し、cohttp-eio のクライアントから叩く |
 

@@ -18,7 +18,8 @@ let with_server env f =
      graceful stop (Server.serve ~stop) は keep-alive の接続が閉じるまで待つので、
      テストでは Fiber.first によるキャンセルで止める。 *)
   Eio.Fiber.first
-    (fun () -> Server.serve ~store socket)
+    (fun () ->
+      Server.serve ~wrap:(fun th -> User_api_app.Handler.v ~store th) socket)
     (fun () -> f ~client ~sw ~port)
 
 let read (response, body) =

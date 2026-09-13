@@ -1,9 +1,10 @@
-; Gateway: 腐敗防止層 (ACL) 兼 Port の実装。
-; Driver の DTO / エラー語彙と Domain を相互に翻訳し、Port の action を
-; エフェクトハンドラとして解釈する (= スライドの「実装」の矢印)。
+; Gateway: 腐敗防止層 (ACL)。
+; Driver の DTO / エラー語彙と Domain を相互に翻訳するだけの層で、effect は扱わない。
+; Port との対応付け (= スライドの「実装」の矢印) は composition root (lib/app/) が行うので、
+; ここは user_api_port に依存しない。
 
 (include_subdirs qualified)
 
 (library
  (name user_api_gateway)
- (libraries user_api_domain user_api_port user_api_driver))
+ (libraries user_api_domain user_api_driver))

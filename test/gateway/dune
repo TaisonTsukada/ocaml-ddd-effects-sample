@@ -1,6 +1,7 @@
 ; Gateway 層のテスト。
 ; 腐敗防止層の変換 (row <-> domain, Driver のエラー -> ドメインのエラー) と、
-; 実 Driver を使った Port の解釈 (Usecase をハンドラで囲んで走らせる) を見る。
+; 実 Driver を使ったリポジトリ操作を見る。
+; Port の action との束縛は composition root の責務なので test/app/ で見る。
 
 (test
  (name test_user_repository)
@@ -9,6 +10,5 @@
   user_api_domain
   user_api_driver
   user_api_gateway
-  user_api_usecase
   user_api_test_support
   alcotest))

@@ -68,34 +68,6 @@ let test_unique_violation () =
     ~expected:(Error (`Conflict "email"))
     ~actual:(create ())
 
-(* --- ハンドラとして Usecase を解釈する --- *)
-
-let test_handler_interprets_usecase () =
-  let store = Store.create () in
-  let registered =
-    Gateway.handler ~store @@ fun () ->
-    User_api_usecase.Register_user.run ~name:(name_of "nymphium")
-      ~email:(email_of "nymphium@example.com")
-  in
-  Alcotest.check' result_t ~msg:"Usecase をハンドラで囲むだけで動く"
-    ~expected:(Ok (user ~id:1 ()))
-    ~actual:registered;
-  let fetched =
-    Gateway.handler ~store @@ fun () ->
-    User_api_usecase.Get_user.run ~id:(id_of 1)
-  in
-  Alcotest.check' result_t ~msg:"同じストアから取得できる"
-    ~expected:(Ok (user ~id:1 ()))
-    ~actual:fetched;
-  let duplicated =
-    Gateway.handler ~store @@ fun () ->
-    User_api_usecase.Register_user.run ~name:(name_of "another")
-      ~email:(email_of "nymphium@example.com")
-  in
-  Alcotest.check' result_t ~msg:"重複登録は Conflict"
-    ~expected:(Error (`Conflict "email"))
-    ~actual:duplicated
-
 let () =
   Alcotest.run "gateway"
     [
@@ -108,11 +80,9 @@ let () =
             test_of_domain_round_trip;
           Alcotest.test_case "エラー語彙の翻訳" `Quick test_translate_error;
         ] );
-      ( "Port の実装",
+      ( "Driver との結合",
         [
           Alcotest.test_case "登録と検索" `Quick test_create_and_find;
           Alcotest.test_case "一意制約違反" `Quick test_unique_violation;
-          Alcotest.test_case "ハンドラで Usecase を解釈する" `Quick
-            test_handler_interprets_usecase;
         ] );
     ]
