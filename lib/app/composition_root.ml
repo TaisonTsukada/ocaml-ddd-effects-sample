@@ -10,9 +10,7 @@
 open Effect.Deep
 module Locator = User_api_port.Locator
 module User_port = User_api_port.User_port
-module System_port = User_api_port.System_port
 module User_gateway = User_api_gateway.User_gateway
-module System_gateway = User_api_gateway.System_gateway
 
 (** User Port の action を {!User_gateway} の関数へ束縛する。 *)
 let user_port ~store th =
@@ -24,13 +22,6 @@ let user_port ~store th =
   | effect Locator.Inject (User_port.Find_by_email { email }), k ->
       continue k (User_gateway.find_by_email ~store ~email)
 
-(** システム系の Port を {!System_gateway} へ束縛する。 *)
-let system_port th =
-  try th ()
-  with effect Locator.Inject System_port.Ping, k ->
-    continue k (System_gateway.ping ())
-
-(** 全部を積み上げたもの。これで囲んだ計算は「実行環境を渡された」状態になる。 *)
-let handler ~store th =
-  system_port @@ fun () ->
-  user_port ~store @@ fun () -> th ()
+(** 全部を積み上げたもの。これで囲んだ計算は「実行環境を渡された」状態になる。 Port が増えたら
+    [a @@ fun () -> b ~x @@ fun () -> th ()] とハンドラを重ねていく。 *)
+let handler ~store th = user_port ~store @@ fun () -> th ()

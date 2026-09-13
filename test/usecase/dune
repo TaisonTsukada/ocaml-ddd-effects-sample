@@ -1,9 +1,10 @@
 ; Usecase 層のテスト。
 ; モックライブラリは不要で、Locator.Inject に答えるエフェクトハンドラを
-; テストごとに書くだけで Port の実装 (Gateway) を差し替えられる。
+; テストごとに書くだけでよい。本番で composition root が Gateway に束縛している所を、
+; テストでは「その場で書いた答え」に束縛するだけ。
 
 (tests
- (names test_register_user test_get_user test_health)
+ (names test_register_user test_get_user)
  (package user_api)
  (libraries
   user_api_domain

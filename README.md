@@ -10,8 +10,6 @@
 
 ## アーキテクチャ
 
-スライドの図と、この実装の対応です。
-
 ```text
                   DTO <- Domain
        ┌──────┐ ←──────────── ┌─────────┐
@@ -42,7 +40,7 @@
 | Driver | `lib/driver/` | 実際の外部リソース操作。**Domain を知らない** (依存にも入れていない) |
 | 結び目 | `lib/app/`, `bin/` | **composition root**。Port の action を Gateway のどの関数に束縛するかを決め、cohttp-eio に配線する |
 
-スライドの **Gateway ──実装──→ Port** の矢印は、effect では
+**Gateway ──実装──→ Port** の矢印は、effect では
 「Port の `Inject` に答えるハンドラを書くこと」にあたります。本実装ではその**束縛の決定を
 composition root (`lib/app/composition_root.ml`) に集約**し、Gateway 自身は Port を知りません
 (`lib/gateway/dune` に `user_api_port` が無い)。「実装を差し替える」とは
@@ -61,18 +59,14 @@ lib/domain/       errors.ml            ドメインエラー (polymorphic varian
                   objects/user.ml      User = { id; name; email } (各フィールドは封印済み)
 lib/port/         locator.ml           type _ action = .. と Inject effect、call
                   user_port.ml         action += Create / Find_by_id / Find_by_email
-                  system_port.ml       action += Ping
 lib/usecase/      register_user.ml     重複確認 → 登録
                   get_user.ml          取得 → 無ければ `NotFound
-                  health.ml            Ping
 lib/driver/       memory/user_store.ml row (int/string) を持つインメモリストア + 自前のエラー型
-                  system/probe.ml      死活確認
 lib/gateway/      user_gateway.ml      row ⇄ domain / Driver のエラー ⇄ ドメインのエラー の翻訳
-                  system_gateway.ml    死活確認の翻訳
 lib/rest/         dto/user.ml          request/response DTO と to_domain / of_domain
                   dto/error.ml         ドメインエラー → (HTTP ステータス, メッセージ)
                   handler/users.ml     POST /users, GET /users/:id
-                  handler/health.ml    GET /health
+                  handler/health.ml    GET /health (Usecase も Port も通さず即答)
                   router.ml            メソッド + パスのディスパッチ
 lib/app/          composition_root.ml  Port の action を Gateway の関数へ束縛するエフェクトハンドラ
                   server.ml            listen / serve (cohttp-eio)。store も Port も知らない
@@ -115,8 +109,7 @@ test/             support/ domain/ usecase/ e2e/
          continue k (User_gateway.create ~store ~name ~email)
      | ...
 
-   let handler ~store th =
-     system_port @@ fun () -> user_port ~store @@ fun () -> th ()
+   let handler ~store th = user_port ~store @@ fun () -> th ()
    ```
 
 5. **`lib/gateway/user_gateway.ml`** — Driver を呼び、返ってきた `row` を**検証つきで**
@@ -138,7 +131,7 @@ OCaml 5.3 以上 (effect 構文 `effect P, k ->` を使うため) と dune 3.24 
 opam install dune eio eio_main cohttp-eio http uri yojson ppx_yojson_conv logs fmt alcotest
 
 make build   # dune build
-make test    # dune runtest (27 ケース)
+make test    # dune runtest (25 ケース)
 make fmt     # dune fmt
 make run     # PORT=8080 で起動。make run PORT=9090 で変更可
 make opam    # dune-project を編集したあと user_api.opam を生成し直す
@@ -180,11 +173,15 @@ curl -i localhost:8080/health
 # {"status":"ok"}
 ```
 
+`/health` だけは Usecase も Port も作らず、REST のハンドラで即答しています。
+「200 を返せること自体」が答えなのでレイヤーを通す意味がなく、通すと構造だけが増えるためです。
+DB への `SELECT 1` のように外部リソースを見に行くようになった時点で Port に切り出します。
+
 データはメモリにだけ保持するので、プロセスを終了すると消えます。
 
 ## テスト
 
-`make test` で 27 ケースが走ります。**純粋な中心 (domain / usecase) と、外側の結線をまとめて
+`make test` で 25 ケースが走ります。**純粋な中心 (domain / usecase) と、外側の結線をまとめて
 踏む e2e** の 3 つだけに絞っています。Gateway・composition root・REST は「翻訳と結線」しかない
 薄い層で、単体テストを置くと振る舞いではなく構造をピン留めしてしまい、レイヤーを動かすたびに
 壊れるからです。

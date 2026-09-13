@@ -1,7 +1,7 @@
 ; REST: HTTP (JSON DTO) と Usecase の間の変換層。
 ; DTO -> Domain のパースはここで行うので、この先 (Usecase/Port/Domain) には
 ; 常に valid なドメインの値しか流れない (Always Valid Domain Model)。
-; Usecase 内で perform される effect はこの層を素通りして Gateway のハンドラに届く。
+; Usecase 内で perform される effect はこの層を素通りして composition root のハンドラに届く。
 
 (include_subdirs qualified)
 

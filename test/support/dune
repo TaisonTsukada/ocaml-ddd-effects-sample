@@ -1,4 +1,4 @@
-; テスト間で共有する fixture と Alcotest の testable。
+; テスト間で共有する fixture、Alcotest の testable、Port のモック。
 ; unsafe_from (バリデーション省略) を使ってよいのはここだけ。
 
 (library

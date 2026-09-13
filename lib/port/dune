@@ -1,6 +1,6 @@
 ; Port: Usecase が外の世界に求める操作の「宣言」だけを置く層。
-; 実装は一切なく (それは Gateway の仕事)、あるのは extensible variant の action と、
-; それを送出する Inject effect だけ。
+; 実装は一切なく (Driver の操作を翻訳するのは Gateway、action をその翻訳に束縛するのは
+; composition root)、あるのは extensible variant の action と、それを送出する Inject effect だけ。
 
 (include_subdirs qualified)
 
