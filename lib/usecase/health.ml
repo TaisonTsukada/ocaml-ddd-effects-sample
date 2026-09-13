@@ -3,4 +3,4 @@
 open User_api_domain
 open User_api_port
 
-let run () : (unit, [> Errors.t ]) result = Locator.call System.Ping
+let run () : (unit, [> Errors.t ]) result = Locator.call System_port.Ping

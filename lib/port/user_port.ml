@@ -1,7 +1,8 @@
-(** User リポジトリの「語彙」。
+(** User に関する Port の「語彙」。
 
-    ここにはシグネチャ (action) だけがあり、実装はない。実装は Driver にあり、 両者を繋ぐのは Gateway のハンドラ。Usecase
-    はこのコンストラクタを使わないと effect を投げられないので、シグネチャと実装のズレはコンパイル時に検出される。 *)
+    ここにはシグネチャ (action) だけがあり、実装はない。実際の操作は Driver にあり、 その翻訳は Gateway が、両者の束縛は
+    composition root が行う。Usecase はこの コンストラクタを使わないと effect
+    を投げられないので、語彙と使用のズレは起きない。 *)
 
 open User_api_domain
 

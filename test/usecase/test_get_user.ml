@@ -1,5 +1,5 @@
 module Locator = User_api_port.Locator
-module Port = User_api_port.User_repository
+module User_port = User_api_port.User_port
 module M = User_api_usecase.Get_user
 open User_api_test_support.Fixture
 module Mock = User_api_test_support.Mock
@@ -9,7 +9,7 @@ let result_t = Alcotest.result user_t errors_t
 let test_found () =
   let fixture = user ~id:7 () in
   let inject : type a. a Locator.action -> a = function
-    | Port.Find_by_id { id } ->
+    | User_port.Find_by_id { id } ->
         Alcotest.check' id_t ~msg:"same id" ~expected:(id_of 7) ~actual:id;
         Ok (Some fixture)
     | _ -> failwith "unexpected action"
@@ -19,7 +19,7 @@ let test_found () =
 
 let test_not_found () =
   let inject : type a. a Locator.action -> a = function
-    | Port.Find_by_id _ -> Ok None
+    | User_port.Find_by_id _ -> Ok None
     | _ -> failwith "unexpected action"
   in
   let actual = Mock.handle { inject } (fun () -> M.run ~id:(id_of 404)) in
@@ -29,7 +29,7 @@ let test_not_found () =
 
 let test_failure_is_propagated () =
   let inject : type a. a Locator.action -> a = function
-    | Port.Find_by_id _ -> Error (`InternalError "boom")
+    | User_port.Find_by_id _ -> Error (`InternalError "boom")
     | _ -> failwith "unexpected action"
   in
   let actual = Mock.handle { inject } (fun () -> M.run ~id:(id_of 1)) in

@@ -60,15 +60,15 @@ lib/domain/       errors.ml            ドメインエラー (polymorphic varian
                   morph.ml             Seal / SealHom: 型の隠蔽で値を絞るファンクター
                   objects/user.ml      User = { id; name; email } (各フィールドは封印済み)
 lib/port/         locator.ml           type _ action = .. と Inject effect、call
-                  user_repository.ml   action += Create / Find_by_id / Find_by_email
-                  system.ml            action += Ping
+                  user_port.ml         action += Create / Find_by_id / Find_by_email
+                  system_port.ml       action += Ping
 lib/usecase/      register_user.ml     重複確認 → 登録
                   get_user.ml          取得 → 無ければ `NotFound
                   health.ml            Ping
 lib/driver/       memory/user_store.ml row (int/string) を持つインメモリストア + 自前のエラー型
                   system/probe.ml      死活確認
-lib/gateway/      user_repository.ml   row ⇄ domain / Driver のエラー ⇄ ドメインのエラー の翻訳
-                  system.ml            死活確認の翻訳
+lib/gateway/      user_gateway.ml      row ⇄ domain / Driver のエラー ⇄ ドメインのエラー の翻訳
+                  system_gateway.ml    死活確認の翻訳
 lib/rest/         dto/user.ml          request/response DTO と to_domain / of_domain
                   dto/error.ml         ドメインエラー → (HTTP ステータス, メッセージ)
                   handler/users.ml     POST /users, GET /users/:id
@@ -99,26 +99,26 @@ test/             support/ domain/ usecase/ gateway/ app/ rest/ e2e/
 
    ```ocaml
    let run ~name ~email =
-     let* existing = Locator.call @@ User_repository.Find_by_email { email } in
+     let* existing = Locator.call @@ User_port.Find_by_email { email } in
      match existing with
      | Some _ -> Error (`Conflict "email")
-     | None -> Locator.call @@ User_repository.Create { name; email }
+     | None -> Locator.call @@ User_port.Create { name; email }
    ```
 
 4. **`lib/app/handler.ml`** (composition root) — `Inject` を捕まえて、
    その action を Gateway のどの関数で答えるかを決める。束縛の決定はここに集約されている。
 
    ```ocaml
-   let users ~store th =
+   let user_port ~store th =
      try th () with
-     | effect Locator.Inject (User_repository.Create { name; email }), k ->
-         continue k (Gateway.User_repository.create ~store ~name ~email)
+     | effect Locator.Inject (User_port.Create { name; email }), k ->
+         continue k (User_gateway.create ~store ~name ~email)
      | ...
 
-   let v ~store th = system @@ fun () -> users ~store @@ fun () -> th ()
+   let v ~store th = system_port @@ fun () -> user_port ~store @@ fun () -> th ()
    ```
 
-5. **`lib/gateway/user_repository.ml`** — Driver を呼び、返ってきた `row` を**検証つきで**
+5. **`lib/gateway/user_gateway.ml`** — Driver を呼び、返ってきた `row` を**検証つきで**
    ドメインに戻す (壊れていれば `` `InternalError ``)。effect のことは知らない純粋な関数。
 6. **`lib/app/server.ml`** — cohttp-eio は接続ごとに fiber を fork し、**effect は fiber をまたげない**ので、
    ハンドラはリクエストごとの callback の中で被せる (記事 §6 と同じ制約)。サーバー自身は

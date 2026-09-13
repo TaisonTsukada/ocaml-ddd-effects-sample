@@ -1,5 +1,5 @@
 module Locator = User_api_port.Locator
-module Port = User_api_port.System
+module System_port = User_api_port.System_port
 module M = User_api_usecase.Health
 open User_api_test_support.Fixture
 module Mock = User_api_test_support.Mock
@@ -8,7 +8,7 @@ let result_t = Alcotest.result Alcotest.unit errors_t
 
 let test_ok () =
   let inject : type a. a Locator.action -> a = function
-    | Port.Ping -> Ok ()
+    | System_port.Ping -> Ok ()
     | _ -> failwith "unexpected action"
   in
   let actual = Mock.handle { inject } M.run in
@@ -16,7 +16,7 @@ let test_ok () =
 
 let test_down () =
   let inject : type a. a Locator.action -> a = function
-    | Port.Ping -> Error (`InternalError "down")
+    | System_port.Ping -> Error (`InternalError "down")
     | _ -> failwith "unexpected action"
   in
   let actual = Mock.handle { inject } M.run in

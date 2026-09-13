@@ -1,4 +1,4 @@
-(** User リポジトリの腐敗防止層 (ACL)。
+(** User Port に対応する腐敗防止層 (ACL)。
 
     Driver の語彙 ([row] / [Store.error]) と Domain の語彙をひたすら翻訳するだけの層で、 effect
     のことは知らない (依存にも [user_api_port] を入れていない)。 どの Port の action
