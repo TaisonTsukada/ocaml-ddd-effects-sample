@@ -1,18 +1,11 @@
-# User API — 依存関係をエフェクトで文脈に持ち上げる × REST/Usecase/Port/Gateway/Driver
+# User API 
 
-[依存関係をエフェクトで文脈に持ち上げる](https://nymphium.github.io/2025/12/28/ddd2.html)
-(nymphium) の内容を、
-[「マイクロサービス内で動く API を F# で書いている」p.14 のアーキテクチャ](https://speakerdeck.com/ayato0211/maikurosabisunei-dedong-kuapiwof-number-deshu-iteiru?slide=14)
-のレイヤー分割で組み直した、OCaml 5 + Eio + cohttp-eio の実動サンプルです。
-
-記事の要点はそのまま残しています。
-
-- **型の隠蔽でドメインの値を絞る** (記事 §2): `Morph.Seal` / `Morph.SealHom` で value object を封印し、
+- **型の隠蔽でドメインの値を絞る** : `Morph.Seal` / `Morph.SealHom` で value object を封印し、
   `from` を通らない値は存在させない (Parse, don't validate)。
-- **依存関係をエフェクトで文脈に持ち上げる** (記事 §3): Usecase は Port を引数でもファンクターでも
+- **依存関係をエフェクトで文脈に持ち上げる**: Usecase は Port を引数でもファンクターでも
   受け取らず、`Locator.call` で effect を perform するだけ。
-- **結び目としての main** (記事 §4): エフェクトハンドラを被せた瞬間に実行環境が決まる。
-- **副次効果としてのテスト容易性** (記事 §5): モックライブラリは使わず、`Inject` に答える
+- **結び目としての main** : エフェクトハンドラを被せた瞬間に実行環境が決まる。
+- **副次効果としてのテスト容易性**: モックライブラリは使わず、`Inject` に答える
   ハンドラを書くだけで Port を差し替える。
 
 ## アーキテクチャ
@@ -194,20 +187,3 @@ let inject : type a. a Locator.action -> a = function
 in
 Mock.handle { inject } (fun () -> Register_user.run ~name ~email)
 ```
-
-## 記事・スライドとの差分
-
-- **DTO → Domain の変換位置**: 記事は Usecase の中で `User.Name.from` を呼んでいますが、
-  本実装ではスライドに合わせて **REST 層**で変換しています。Usecase / Port / Domain には
-  常に検証済みの値しか入らない (= Always Valid Domain Model) という図の意図を優先しました。
-- **`[@@deriving eq, show]` を使っていない**: ppx_deriving を増やさず、`Morph` のファンクター引数に
-  `equal` / `pp` を手書きで渡しています。やっていることは同じです。
-- **Port の戻り値は `Result` のまま**: 記事 §3-1 の「`Result` を省いてハンドラ側で継続を捨てる」案は
-  採らず、「Port の操作は失敗し得る」ことを型に残しました。
-- **`Locator.call`**: 記事の命名に合わせています。
-- **結び目をライブラリに**: 記事/v1 は `bin/handler.ml` でしたが、E2E テストから同じ配線を
-  再利用するために `lib/app/` に置き、`bin/main.ml` は `PORT` を読むだけにしています。
-
-同じ記事をエンドポイント 1 つで最小再現した Todo API 版が
-[TaisonTsukada/ocaml-api-sample](https://github.com/TaisonTsukada/ocaml-api-sample) にあります。
-本リポジトリはそれをスライドのレイヤー分割で作り直した版です。
