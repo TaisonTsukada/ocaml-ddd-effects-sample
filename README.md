@@ -1,14 +1,79 @@
-# User API 
+# User API (OCaml 5 Effect による DDD サンプル)
 
-- **型の隠蔽でドメインの値を絞る** : `Morph.Seal` / `Morph.SealHom` で value object を封印し、
-  `from` を通らない値は存在させない (Parse, don't validate)。
-- **依存関係をエフェクトで文脈に持ち上げる**: Usecase は Port を引数でもファンクターでも
-  受け取らず、`Locator.call` で effect を perform するだけ。
-- **結び目としての main** : エフェクトハンドラを被せた瞬間に実行環境が決まる。
-- **副次効果としてのテスト容易性**: モックライブラリは使わず、`Inject` に答える
-  ハンドラを書くだけで Port を差し替える。
+OCaml 5 で正式導入された **Effect Handler（エフェクトハンドラ）** を使って、
+クリーンアーキテクチャ / DDD の **依存性注入 (DI)** を実現するサンプルアプリケーションです。
 
-## アーキテクチャ
+---
+
+## 3分でわかる「Effect Handler による DI」
+
+「Effect Handler という言葉は聞いたことがあるけれど、何が嬉しいのかよくわからない」という方向けに、このリポジトリの設計思想を解説します。
+
+### 1. 直感的なイメージ：「再開できる例外」
+
+プログラミング言語の「例外 (Exception)」を思い浮かべてください。
+
+- **例外**: `raise` すると外側の `try ... with` まで一気にジャンプし、**そこで処理は終了**します。
+- **Effect**: `perform` すると外側のハンドラまでジャンプしますが、**ハンドラが答えを返してくれたら、元の場所から処理をそのまま再開**できます。
+
+```text
+【通常の例外】
+Usecase ──(raise)──> [ハンドラ] ──> ここで終わり（二度と戻らない）
+
+【Effect Handler】
+Usecase ──(perform "データ頂戴")──> [ハンドラ]
+   │                                     │
+   │ <─────(continue "はいどうぞ")───────┘
+   ↓
+Usecase: データを受け取って続きを実行！
+```
+
+つまり、Effect とは **「深い関数の中から外側へ向けて『これやって！』とリクエストを投げ、外側から結果を受け取って続きを走らせる仕組み」** です。
+
+### 2. 従来の DI が抱えていた悩み
+
+DDD やオニオンアーキテクチャでは、「ビジネスロジック (Usecase) は DB や外部サービスの詳細に依存したくない」という原則があります。従来の言語や OCaml でこれをやろうとすると、以下の壁にぶつかりがちでした。
+
+1. **引数渡し (関数の引数に repository を渡す)**
+   - Usecase を呼び出す REST コントローラなども Repository を知らなければならず、引数のバケツリレーが発生する。
+2. **OCaml の Functor (モジュール引数で抽象化する)**
+   - 型安全だが、シグネチャの定義やモジュール展開が重厚になり、型パズルになりやすい。
+3. **グローバル変数 / シングルトン**
+   - テスト時にモックを差し替えるのが困難で、並行テストで状態が壊れる。
+
+### 3. Effect による解決：シグネチャから依存関係が消える！
+
+Effect を使うと、Usecase のシグネチャから **DB やリポジトリに関する引数が一切消えます**。
+
+```ocaml
+(* lib/usecase/register_user.ml *)
+
+let run ~(name : Objects.User.Name.t) ~(email : Objects.User.Email.t) : outcome =
+  (* 1. 「このメールアドレスのユーザーいる？」と外側に叫ぶ *)
+  match Locator.call @@ User_port.Find_by_email { email } with
+  | Some _ -> Email_taken
+  | None ->
+      (* 2. 「ユーザーを保存して！」と外側に叫ぶ *)
+      Registered (Locator.call @@ User_port.Create { name; email })
+```
+
+- 関数の引数は `~name` と `~email` だけ。純粋な業務データしか受け取りません。
+- Usecase は「誰がどうやって保存するか（PostgreSQLなのか、インメモリなのか、テスト用のダミーなのか）」を一切知りません。
+
+### 4. 誰が答えるのか？：一番外側でハンドラを被せるだけ
+
+Usecase が投げたリクエスト (`perform`) は、外側で「ハンドラ」を被せることで解釈します。
+
+- **本番環境 (`lib/app/composition_root.ml`)**:
+  「`Create` されたら、本物の DB (Driver) を呼んで結果を返す」というハンドラを被せる。
+- **テスト (`test/usecase/test_register_user.ml`)**:
+  「`Find_by_email` されたら、即座に `None` を返す」というハンドラをその場で被せる。
+
+**専用のモックライブラリは不要**です。OCaml の普通のパターンマッチでハンドラを書くだけで、自由自在に依存を差し替えられます。
+
+---
+
+## アーキテクチャ概要
 
 ```text
                   DTO <- Domain
@@ -30,175 +95,160 @@
        └───────────┘  Domain <- DTO               └────────┘
 ```
 
-| レイヤー | 実体 | 役割 |
+| レイヤー | ディレクトリ | 役割 |
 | --- | --- | --- |
-| REST | `lib/rest/` | JSON DTO ⇄ Domain の変換、ルーティング、ドメインエラー → HTTP ステータス |
-| Usecase | `lib/usecase/` | Domain と Port の語彙だけで振る舞いを記述。HTTP も DB も知らない |
-| Port | `lib/port/` | 「何が欲しいか」の宣言のみ。`Locator.action` (extensible variant) + `Inject` effect |
-| Domain | `lib/domain/` | 封印された value object とドメインエラー。どのライブラリにも依存しない |
-| Gateway | `lib/gateway/` | **腐敗防止層 (ACL)**。Driver の DTO/エラー語彙と Domain を翻訳する。effect は扱わない |
-| Driver | `lib/driver/` | 実際の外部リソース操作。**Domain を知らない** (依存にも入れていない) |
-| 結び目 | `lib/app/`, `bin/` | **composition root**。Port の action を Gateway のどの関数に束縛するかを決め、cohttp-eio に配線する |
+| **REST** | `lib/rest/` | HTTP (JSON) ⇄ Domain の変換、ルーティング。入力のバリデーションはここで完結する |
+| **Usecase** | `lib/usecase/` | 業務ロジックの記述。Port の語彙を使って Effect を投げる。結果は自分の ADT で返す |
+| **Port** | `lib/port/` | 「何が欲しいか」の語彙（シグネチャ）の宣言。実装は持たない |
+| **Domain** | `lib/domain/` | 封印された Value Object（正しい値しか存在できない） |
+| **Gateway** | `lib/gateway/` | **腐敗防止層 (ACL)**。Driver の生データと Domain オブジェクトを相互変換する。回復不能な失敗は例外で落とす |
+| **Driver** | `lib/driver/` | 外部ストレージ操作。Domain のことは一切知らない |
+| **結び目** | `lib/app/`, `bin/` | **Composition Root**。どの Port のリクエストをどの Gateway に繋ぐかを決定する |
 
-**Gateway ──実装──→ Port** の矢印は、effect では
-「Port の `Inject` に答えるハンドラを書くこと」にあたります。本実装ではその**束縛の決定を
-composition root (`lib/app/composition_root.ml`) に集約**し、Gateway 自身は Port を知りません
-(`lib/gateway/dune` に `user_api_port` が無い)。「実装を差し替える」とは
-composition root が参照する Gateway を差し替えることです。
+---
 
-依存の向きは `dune-project` の `(implicit_transitive_deps false)` によってコンパイル時に強制されます。
-たとえば `lib/driver/dune` は `user_api_domain` を列挙していないので、Driver からドメインの型を
-参照しようとするとビルドが落ちます。これが腐敗防止層 (Gateway) を置く理由そのものです。
-同じ仕組みで、Gateway から Port の action を触ることもできません。
+## コードで追う Effect DI の仕組み
 
-## ディレクトリ
+### 1. Port: お願いの語彙を定義する (`lib/port/`)
 
-```text
-lib/domain/       errors.ml            ドメインエラー (polymorphic variant)
-                  morph.ml             Seal / SealHom: 型の隠蔽で値を絞るファンクター
-                  objects/user.ml      User = { id; name; email } (各フィールドは封印済み)
-lib/port/         locator.ml           type _ action = .. と Inject effect、call
-                  user_port.ml         action += Create / Find_by_id / Find_by_email
-lib/usecase/      register_user.ml     重複確認 → 登録
-                  get_user.ml          取得 → 無ければ `NotFound
-lib/driver/       memory/user_store.ml row (int/string) を持つインメモリストア + 自前のエラー型
-lib/gateway/      user_gateway.ml      row ⇄ domain / Driver のエラー ⇄ ドメインのエラー の翻訳
-lib/rest/         dto/user.ml          request/response DTO と to_domain / of_domain
-                  dto/error.ml         ドメインエラー → (HTTP ステータス, メッセージ)
-                  handler/users.ml     POST /users, GET /users/:id
-                  handler/health.ml    GET /health (Usecase も Port も通さず即答)
-                  router.ml            メソッド + パスのディスパッチ
-lib/app/          composition_root.ml  Port の action を Gateway の関数へ束縛するエフェクトハンドラ
-                  server.ml            listen / serve (cohttp-eio)。store も Port も知らない
-bin/main.ml       PORT を読んで起動するだけ
-test/             support/ domain/ usecase/ e2e/
-```
-
-## 1 リクエストの流れ
-
-`POST /users` を例に、どこで何が起きるか。
-
-1. **`lib/rest/router.ml`** — メソッドとパスで `Handler.Users.register` にディスパッチ。
-2. **`lib/rest/dto/user.ml`** — ボディを JSON としてパースし、`Name.from` / `Email.from` で
-   **ドメインの値に変換する**。ここで落ちれば 400 で返り、Usecase には届かない。
-
-   ```ocaml
-   let to_domain ({ name; email } : register_request) =
-     let* name = User.Name.from name in
-     let* email = User.Email.from email in
-     Ok (name, email)
-   ```
-
-3. **`lib/usecase/register_user.ml`** — Port の語彙を組み合わせるだけ。依存は引数に現れない。
-
-   ```ocaml
-   let run ~name ~email =
-     let* existing = Locator.call @@ User_port.Find_by_email { email } in
-     match existing with
-     | Some _ -> Error (`Conflict "email")
-     | None -> Locator.call @@ User_port.Create { name; email }
-   ```
-
-4. **`lib/app/composition_root.ml`** — `Inject` を捕まえて、
-   その action を Gateway のどの関数で答えるかを決める。束縛の決定はここに集約されている。
-
-   ```ocaml
-   let user_port ~store th =
-     try th () with
-     | effect Locator.Inject (User_port.Create { name; email }), k ->
-         continue k (User_gateway.create ~store ~name ~email)
-     | ...
-
-   let handler ~store th = user_port ~store @@ fun () -> th ()
-   ```
-
-5. **`lib/gateway/user_gateway.ml`** — Driver を呼び、返ってきた `row` を**検証つきで**
-   ドメインに戻す (壊れていれば `` `InternalError ``)。effect のことは知らない純粋な関数。
-6. **`lib/app/server.ml`** — cohttp-eio は接続ごとに fiber を fork し、**effect は fiber をまたげない**ので、
-   ハンドラはリクエストごとの callback の中で被せる (記事 §6 と同じ制約)。サーバー自身は
-   `wrap` を受け取るだけで、`store` も Port も知らない。
-
-   ```ocaml
-   (* bin/main.ml *)
-   Server.serve ~wrap:(fun th -> Composition_root.handler ~store th) socket
-   ```
-
-## ビルド、テスト、起動
-
-OCaml 5.3 以上 (effect 構文 `effect P, k ->` を使うため) と dune 3.24 以上が必要です。
-
-```sh
-opam install dune eio eio_main cohttp-eio http uri yojson ppx_yojson_conv logs fmt alcotest
-
-make build   # dune build
-make test    # dune runtest (25 ケース)
-make fmt     # dune fmt
-make run     # PORT=8080 で起動。make run PORT=9090 で変更可
-make opam    # dune-project を編集したあと user_api.opam を生成し直す
-```
-
-`user_api.opam` は dune が生成したものをコミットしています (dune 3.24 は `_build` 内にしか
-書き出さないため、`make opam` で明示的に取り込む運用にしています)。
-
-## API
-
-```sh
-# 登録
-curl -i -X POST localhost:8080/users -d '{"name":"nymphium","email":"nymphium@example.com"}'
-# HTTP/1.1 201 Created
-# {"id":1,"name":"nymphium","email":"nymphium@example.com"}
-
-# メールが重複したら 409
-curl -i -X POST localhost:8080/users -d '{"name":"dup","email":"nymphium@example.com"}'
-# HTTP/1.1 409 Conflict
-# {"error":"email already exists"}
-
-# 取得
-curl -i localhost:8080/users/1
-# HTTP/1.1 200 OK
-# {"id":1,"name":"nymphium","email":"nymphium@example.com"}
-
-curl -i localhost:8080/users/999
-# HTTP/1.1 404 Not Found
-# {"error":"user not found"}
-
-# バリデーション (name は 1〜50 文字、email は "@" の前後が非空)
-curl -i -X POST localhost:8080/users -d '{"name":"","email":"nope"}'
-# HTTP/1.1 400 Bad Request
-# {"error":"invalid name"}
-
-# 死活確認
-curl -i localhost:8080/health
-# HTTP/1.1 200 OK
-# {"status":"ok"}
-```
-
-`/health` だけは Usecase も Port も作らず、REST のハンドラで即答しています。
-「200 を返せること自体」が答えなのでレイヤーを通す意味がなく、通すと構造だけが増えるためです。
-DB への `SELECT 1` のように外部リソースを見に行くようになった時点で Port に切り出します。
-
-データはメモリにだけ保持するので、プロセスを終了すると消えます。
-
-## テスト
-
-`make test` で 25 ケースが走ります。**純粋な中心 (domain / usecase) と、外側の結線をまとめて
-踏む e2e** の 3 つだけに絞っています。Gateway・composition root・REST は「翻訳と結線」しかない
-薄い層で、単体テストを置くと振る舞いではなく構造をピン留めしてしまい、レイヤーを動かすたびに
-壊れるからです。
-
-| 対象 | 何を見ているか |
-| --- | --- |
-| `test/domain/` | value object のバリデーション境界、`Seal` の同型性、アクセサ |
-| `test/usecase/` | **`Inject` に答えるハンドラをモックとして書く** (記事 §5)。重複時に `Create` が呼ばれないことも検証 |
-| `test/e2e/` | 空きポートで実際にサーバーを起動して叩く。ルーティング、JSON パース、**Port の束縛漏れ** (書き忘れると実行時 `Effect.Unhandled`)、ドメインエラー → HTTP ステータスをまとめて踏む |
-
-Usecase のテストはこう書けます。モックライブラリは要りません。
+Port は「どんな操作を要求できるか」という型（GADT + Extensible Variant）を定義するだけです。
 
 ```ocaml
+(* lib/port/user_port.ml *)
+type _ Locator.action +=
+  | Create : { name : M.Name.t; email : M.Email.t } -> M.t Locator.action
+  | Find_by_id : { id : M.Id.t } -> M.t option Locator.action
+  | Find_by_email : { email : M.Email.t } -> M.t option Locator.action
+```
+`-> M.t Locator.action` は、「このリクエストを投げると、最終的に `User.t` が返ってくる」という約束を表します。
+
+### 2. Usecase: お願いを投げる (`lib/usecase/`)
+
+`Locator.call` を呼ぶと、内部で `Effect.perform` が走り、処理が一時停止してハンドラに制御が移ります。
+
+```ocaml
+(* lib/usecase/register_user.ml *)
+let run ~name ~email =
+  match Locator.call @@ User_port.Find_by_email { email } with
+  | Some _ -> Email_taken
+  | None -> Registered (Locator.call @@ User_port.Create { name; email })
+```
+
+### 3. テスト: その場で答える (`test/usecase/`)
+
+テストでは、Port のリクエストに対してダミーの値を返すハンドラをサッと書くだけです。
+
+```ocaml
+(* test/usecase/test_register_user.ml *)
 let inject : type a. a Locator.action -> a = function
-  | User_port.Find_by_email _ -> Ok None
-  | User_port.Create { name; email } -> ...; Ok fixture
+  | User_port.Find_by_email _ -> None             (* 未登録として答える *)
+  | User_port.Create { name; email } -> fixture   (* fixture を返す *)
   | _ -> failwith "unexpected action"
 in
+(* ハンドラの下で Usecase を走らせる *)
 Mock.handle { inject } (fun () -> Register_user.run ~name ~email)
+```
+
+### 4. 本番: 本物のストレージに繋ぐ (`lib/app/composition_root.ml`)
+
+本番のアプリケーションでは、Gateway（本物のストレージ翻訳層）に関数を繋ぎます。
+`continue k value` を呼ぶことで、一時停止していた Usecase が受け取った `value` と共に再開します。
+
+```ocaml
+(* lib/app/composition_root.ml *)
+let user_port ~store th =
+  try th () with
+  | effect Locator.Inject (User_port.Create { name; email }), k ->
+      continue k (User_gateway.create ~store ~name ~email)
+  | effect Locator.Inject (User_port.Find_by_email { email }), k ->
+      continue k (User_gateway.find_by_email ~store ~email)
+  | ...
+```
+
+---
+
+## 本サンプルの設計のこだわり
+
+### 1. Port は `Result` を返さない（ADT と例外の明確な分離）
+
+よくある設計として「Port が `(User.t, error) result` を返す」というものがありますが、本サンプルではあえて **Result を使っていません**。
+
+| 起きた事象 | 性質 | 表現方法 | 理由 |
+| --- | --- | --- | --- |
+| **入力不正** (空文字など) | 境界のバリデーション | `Result` (400) | アプリケーションの入口 (REST DTO) で弾く |
+| **ユーザー不在・メール重複** | 業務上の想定内分岐 | **Usecase の ADT** | 失敗ではなく正常なビジネス結果のひとつ |
+| **DB 接続断・行データ破損** | 回復不能な不測の事態 | **例外で落とす** | 業務ロジックで回復できないため型に持ち回らない |
+
+Port が `Result` を返さないため、Usecase 内に不要なエラー伝播のボイラープレート（`Result.bind` や `let*`）が一切登場しません。
+
+### 2. Always Valid Domain Model (Parse, don't validate)
+
+ドメインの値（`User.Name.t`, `User.Email.t`）は、ファンクター（`Morph.SealHom`）によって型レベルで隠蔽されています。
+バリデーションを通過した値しかドメインの型になれないため、**Usecase や Domain 層に届いた値は 100% 正しいことがコンパイル時に保証**されます。
+
+### 3. コンパイル時にアーキテクチャの境界を強制
+
+`dune-project` に `(implicit_transitive_deps false)` を設定しています。
+これにより、例えば「Driver が勝手に Domain の型を参照する」といったルール違反コードを書くと、コンパイル時にビルドエラーになります。
+
+---
+
+## コードリーディングの推奨順序
+
+1. [`lib/port/user_port.ml`](lib/port/user_port.ml) : どんなリクエスト（語彙）があるかを見る
+2. [`lib/usecase/register_user.ml`](lib/usecase/register_user.ml) : Usecase がどう語彙を呼んでいるかを見る
+3. [`test/usecase/test_register_user.ml`](test/usecase/test_register_user.ml) : テストでどうモックハンドラを被せているかを見る
+4. [`lib/app/composition_root.ml`](lib/app/composition_root.ml) : 本番でどうハンドラを結線しているかを見る
+5. [`lib/gateway/user_gateway.ml`](lib/gateway/user_gateway.ml) : Gateway でどう Driver と Domain を翻訳しているかを見る
+
+---
+
+## ビルド・テスト・実行
+
+### 必要要件
+- OCaml 5.3 以上 (Effect ハンドラ構文 `effect P, k ->` を利用)
+- Dune 3.24 以上
+
+### コマンド
+```sh
+# 依存ライブラリのインストール
+opam install dune eio eio_main cohttp-eio http uri yojson ppx_yojson_conv logs fmt alcotest
+
+# ビルド
+make build
+
+# テスト実行 (25 ケース)
+make test
+
+# コード整形
+make fmt
+
+# サーバー起動 (デフォルト: 8080 ポート)
+make run
+# ポート指定の場合: make run PORT=9090
+```
+
+### API 動作確認
+
+```sh
+# 1. ユーザー登録 (201 Created)
+curl -i -X POST localhost:8080/users \
+  -d '{"name":"nymphium","email":"nymphium@example.com"}'
+
+# 2. メール重複登録 (409 Conflict)
+curl -i -X POST localhost:8080/users \
+  -d '{"name":"dup","email":"nymphium@example.com"}'
+
+# 3. ユーザー取得 (200 OK)
+curl -i localhost:8080/users/1
+
+# 4. 存在しないユーザー取得 (404 Not Found)
+curl -i localhost:8080/users/999
+
+# 5. バリデーションエラー (400 Bad Request)
+curl -i -X POST localhost:8080/users \
+  -d '{"name":"","email":"invalid"}'
+
+# 6. ヘルスチェック (200 OK)
+curl -i localhost:8080/health
 ```

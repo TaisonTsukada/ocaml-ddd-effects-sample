@@ -1,10 +1,16 @@
-(** ユースケース: ID でユーザーを 1 人取得する。 「見つからない」を Port の [None] からドメインのエラーへ翻訳するのはここ。 *)
+(** ユースケース: ID でユーザーを 1 人取得する。
+
+    Port が返す [option] を、このユースケースの語彙 ({!outcome}) に置き直すだけ。
+    「見つからない」はエラーではなく答えのひとつなので、[result] にはしない。 *)
 
 open User_api_domain
 open User_api_port
 
-let ( let* ) = Result.bind
+type outcome =
+  | Found of Objects.User.t  (** 見つかった。 *)
+  | Missing  (** その ID のユーザーは居ない。 *)
 
-let run ~(id : Objects.User.Id.t) : (Objects.User.t, [> Errors.t ]) result =
-  let* found = Locator.call @@ User_port.Find_by_id { id } in
-  match found with Some user -> Ok user | None -> Error (`NotFound "user")
+let run ~(id : Objects.User.Id.t) : outcome =
+  match Locator.call @@ User_port.Find_by_id { id } with
+  | Some user -> Found user
+  | None -> Missing
